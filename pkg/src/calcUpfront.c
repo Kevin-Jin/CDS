@@ -17,6 +17,37 @@
 
 #define NEW_ARRAY1(t,n)          (t *) JpmcdsMallocSafe(sizeof(t)*(n))
 
+SEXP is_na(SEXP x)
+{
+  int n = length(x);
+
+  SEXP out = PROTECT(allocVector(LGLSXP, n + 1));
+  int allNa = 1;
+
+  for (int i = 0; i < n; i++) {
+    switch(TYPEOF(x)) {
+      case LGLSXP:
+        allNa &= (LOGICAL(out)[i] = (LOGICAL(x)[i] == NA_LOGICAL));
+        break;
+      case INTSXP:
+        allNa &= (LOGICAL(out)[i] = (INTEGER(x)[i] == NA_INTEGER));
+        break;
+      case REALSXP:
+        allNa &= (LOGICAL(out)[i] = ISNA(REAL(x)[i]));
+        break;
+      case STRSXP:
+        allNa &= (LOGICAL(out)[i] = (STRING_ELT(x, i) == NA_STRING));
+        break;
+      default:
+        LOGICAL(out)[i] = NA_LOGICAL;
+    }
+  }
+  LOGICAL(out)[n] = allNa;
+  UNPROTECT(1);
+
+  return out;
+}
+
 /*
 ***************************************************************************
 ** Calculate upfront charge.
@@ -70,7 +101,7 @@ SEXP calcUpfrontTest
   int n;
   TDate baseDate, today, benchmarkDate, startDate, endDate, stepinDate,valueDate;
   int isPriceClean, payAccruedOnDefault;
-  SEXP upfrontPayment;
+  SEXP upfrontPayment, is_na_at;
   TCurve *discCurve = NULL;
   char* pt_types;
   char* pt_holidays;
@@ -87,7 +118,7 @@ SEXP calcUpfrontTest
 
   // new
   char *pt_badDayConvZC;
-  double parSpread_for_upf, couponRate_for_upf, recoveryRate_for_upf, notional_for_upf;
+  double *parSpread_for_upf, couponRate_for_upf, recoveryRate_for_upf, notional_for_upf, *upfrontPayments;
   
   // function to consolidate R input to TDate
   baseDate_input = coerceVector(baseDate_input,INTSXP);
@@ -151,7 +182,6 @@ SEXP calcUpfrontTest
   calendar = coerceVector(calendar, STRSXP);
   pt_calendar = (char *) CHAR(STRING_ELT(calendar,0));
 
-  parSpread_for_upf = *REAL(parSpread);
   couponRate_for_upf = *REAL(couponRate);
   recoveryRate_for_upf = *REAL(recoveryRate);
   isPriceClean = *INTEGER(isPriceClean_input);
@@ -252,10 +282,23 @@ SEXP calcUpfrontTest
     if (JpmcdsStringToStubMethod(pt_stubCDS, &stub) != SUCCESS)
         goto done;
 
-    double result = -1.0;
+    n = length(parSpread);
+    double *result = (double *)malloc(sizeof(double) * n);
+    for (i = 0; i < n; ++i)
+      result[i] = NA_REAL;
+    PROTECT(upfrontPayment = allocVector(REALSXP, n));
+    PROTECT(is_na_at = is_na(parSpread));
+    if (LOGICAL(is_na_at)[n])
+      // vector is entirely NA
+      goto done;
 
-    PROTECT(upfrontPayment = allocVector(REALSXP, 1));
-    if (JpmcdsCdsoneUpfrontCharge(today,
+    parSpread_for_upf = REAL(parSpread);
+    for (i = 0; i < n; ++i) {
+      if (LOGICAL(is_na_at)[i]) {
+        result[i] = NA_REAL;
+        continue;
+      }
+      if (JpmcdsCdsoneUpfrontCharge(today,
 				  valueDate,
 				  benchmarkDate,
 				  stepinDate,
@@ -269,14 +312,18 @@ SEXP calcUpfrontTest
 				  (char) *pt_badDayConvCDS,
 				  pt_calendar,
 				  discCurve,
-				  parSpread_for_upf/10000.0, 
+				  parSpread_for_upf[i]/10000.0, 
 				  recoveryRate_for_upf,
 				  isPriceClean,
-				  &result) != SUCCESS) 
-      goto done;
+				  &result[i]) != SUCCESS) 
+        goto done;
+    }
+
  done:
-    REAL(upfrontPayment)[0] = result * notional_for_upf;
-    UNPROTECT(1);
+    upfrontPayments = REAL(upfrontPayment);
+    for (i = 0; i < n; ++i)
+      upfrontPayments[i] = result[i] * notional_for_upf;
+    UNPROTECT(2);
     FREE(dates_main);
     return upfrontPayment;
 }
