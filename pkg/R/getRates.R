@@ -44,6 +44,7 @@ getRates <- function(date = Sys.Date(), currency = "USD"){
     ratesURLs <- paste("https://www.markit.com/news/InterestRates_",
                       currency, "_", dateInt, ".zip", sep ="")
     uniqueURLs <- unique(ratesURLs)
+    indices <- unlist(lapply(ratesURLs, function(x) which(x == uniqueURLs)))
     rateInfos <- lapply(uniqueURLs, function(ratesURL) {
         xmlParsedIn <- .downloadRates(ratesURL)
 
@@ -79,7 +80,83 @@ getRates <- function(date = Sys.Date(), currency = "USD"){
             
             return(list(ratesDf, dccDf))
         }
-    })
-    indices <- unlist(lapply(ratesURLs, function(x) which(x == uniqueURLs)))
-    return(rateInfos[indices])
+    })[indices]
+    return(rateInfos)
+}
+
+# cluster = NULL means download each file sequentially. cluster = NA means
+# use the default cluster, or create one if the default cluster does not exist.
+# Otherwise, pass cluster to parLapply.
+serializeRatesCsv <- function(dates = Sys.Date(), toFile = NULL, existingRates = NULL, cluster = if (length(dates) < 16) NULL else NA, currency = "USD") {
+  uniqueDates <- unique(dates)
+  indices <- unlist(lapply(dates, function(x) which(x == uniqueDates)))
+  
+  if (is.null(cluster)) {
+    applyFun <- lapply
+  } else {
+    applyFun <- function(x, FUN) {
+      library(parallel)
+      makeOwnCluster <- is.na(cluster)
+      if (makeOwnCluster)
+        cluster <- makePSOCKcluster(min(length(uniqueDates), getOption("cl.cores", detectCores()) * 2))
+      clusterExport(cluster, c("currency"), envir = environment())
+      #clusterEvalQ(cluster, library(CDS))
+      result <- parLapply(cluster, x, FUN)
+      if (makeOwnCluster)
+        stopCluster(cluster)
+      return(result)
+    }
+  }
+  
+  df <- applyFun(uniqueDates, function(date) {
+    ratesInfo <- getRates(date = date, currency = currency)
+    stopifnot(length(ratesInfo) == 1)
+    ratesInfo <- ratesInfo[[1]]
+    if (class(ratesInfo) == "character"){
+      warning(ratesInfo)
+      types <- NA
+      rates <- NA
+      expiries <- NA
+      
+      mmDCC <- NA
+      fixedSwapFreq <- NA
+      floatSwapFreq <- NA
+      fixedSwapDCC <- NA
+      floatSwapDCC <- NA
+      badDayConvZC <- NA
+      holidays <- NA
+    } else {
+      types <- paste(as.character(ratesInfo[[1]]$type), collapse = "")
+      rates <- paste(as.numeric(as.character(ratesInfo[[1]]$rate)), collapse = ";")
+      expiries <- paste(as.character(ratesInfo[[1]]$expiry), collapse = ";")
+      
+      mmDCC <- as.character(ratesInfo[[2]]$mmDCC)
+      fixedSwapFreq <- as.character(ratesInfo[[2]]$fixedFreq)
+      floatSwapFreq <- as.character(ratesInfo[[2]]$floatFreq)
+      fixedSwapDCC <- as.character(ratesInfo[[2]]$fixedDCC)
+      floatSwapDCC <- as.character(ratesInfo[[2]]$floatDCC)
+      badDayConvZC <- as.character(ratesInfo[[2]]$badDayConvention)
+      holidays <- as.character(ratesInfo[[2]]$swapCalendars)
+    }
+    return(c(date = date, types = types, rates = rates, expiries = expiries, mmDCC = mmDCC, fixedSwapFreq = fixedSwapFreq, floatSwapFreq = floatSwapFreq, fixedSwapDCC = fixedSwapDCC, floatSwapDCC = floatSwapDCC, badDayConvZC = badDayConvZC, holidays = holidays))
+  })[indices]
+  
+  df <- as.data.frame(matrix(unlist(df), byrow = TRUE, nrow = length(df), dimnames = list(NULL, names(df[[1]]))), stringsAsFactors = FALSE)
+  df$date <- as.Date(as.numeric(df$date), origin = "1970-01-01")
+  df <- rbind(existingRates, df)
+  if (is.null(toFile)) {
+    #return(paste(capture.output(write.csv(df, stdout(), row.names = FALSE, quote = TRUE)), collapse = "\n"))
+	return(df)
+  } else {
+    write.csv(df, toFile, row.names = FALSE, quote = TRUE)
+    return(df)
+  }
+}
+
+deserializeRatesCsv <- function(fromFile) {
+  if (!file.exists(fromFile))
+    return(NULL)
+  df <- read.csv(fromFile, stringsAsFactors = FALSE)
+  df$date <- as.Date(df$date)
+  return(df)
 }

@@ -117,36 +117,43 @@ upfront <- function(TDate,
 
     if ((is.null(types) | is.null(rates) | is.null(expiries))){
         # want to concatenate to initially empty vectors in the loop below
-        types = NULL
-        rates = NULL
-        expiries = NULL
-        mmDCC = NULL
-        fixedSwapFreq = NULL
-        floatSwapFreq = NULL
-        fixedSwapDCC = NULL
-        floatSwapDCC = NULL
-        badDayConvZC = NULL
-        holidays = NULL
+        types <- NULL
+        rates <- NULL
+        expiries <- NULL
+        mmDCC <- NULL
+        fixedSwapFreq <- NULL
+        floatSwapFreq <- NULL
+        fixedSwapDCC <- NULL
+        floatSwapDCC <- NULL
+        badDayConvZC <- NULL
+        holidays <- NULL
         
         ratesInfos <- getRates(date = ratesDate, currency = as.character(currency))
         for (i in 1:length(ratesInfos)) {
             ratesInfo <- ratesInfos[[i]]
             if (class(ratesInfo) == "character"){
-                # TODO: return NA for all values, set baseDate = NA if necessary
                 warning(ratesInfo)
-                types = c(types, NA)
-            } else {
-                types = c(types, paste(as.character(ratesInfo[[1]]$type), collapse = ""))
-                rates = c(rates, as.numeric(as.character(ratesInfo[[1]]$rate)))
-                expiries = c(expiries, as.character(ratesInfo[[1]]$expiry))
-                mmDCC = c(mmDCC, as.character(ratesInfo[[2]]$mmDCC))
+                types <- c(types, NA)
                 
-                fixedSwapFreq = c(fixedSwapFreq, as.character(ratesInfo[[2]]$fixedFreq))
-                floatSwapFreq = c(floatSwapFreq, as.character(ratesInfo[[2]]$floatFreq))
-                fixedSwapDCC = c(fixedSwapDCC, as.character(ratesInfo[[2]]$fixedDCC))
-                floatSwapDCC = c(floatSwapDCC, as.character(ratesInfo[[2]]$floatDCC))
-                badDayConvZC = c(badDayConvZC, as.character(ratesInfo[[2]]$badDayConvention))
-                holidays = c(holidays, as.character(ratesInfo[[2]]$swapCalendars))
+                mmDCC <- c(mmDCC, NA)
+                fixedSwapFreq <- c(fixedSwapFreq, NA)
+                floatSwapFreq <- c(floatSwapFreq, NA)
+                fixedSwapDCC <- c(fixedSwapDCC, NA)
+                floatSwapDCC <- c(floatSwapDCC, NA)
+                badDayConvZC <- c(badDayConvZC, NA)
+                holidays <- c(holidays, NA)
+            } else {
+                types <- c(types, paste(as.character(ratesInfo[[1]]$type), collapse = ""))
+                rates <- c(rates, as.numeric(as.character(ratesInfo[[1]]$rate)))
+                expiries <- c(expiries, as.character(ratesInfo[[1]]$expiry))
+                
+                mmDCC <- c(mmDCC, as.character(ratesInfo[[2]]$mmDCC))
+                fixedSwapFreq <- c(fixedSwapFreq, as.character(ratesInfo[[2]]$fixedFreq))
+                floatSwapFreq <- c(floatSwapFreq, as.character(ratesInfo[[2]]$floatFreq))
+                fixedSwapDCC <- c(fixedSwapDCC, as.character(ratesInfo[[2]]$fixedDCC))
+                floatSwapDCC <- c(floatSwapDCC, as.character(ratesInfo[[2]]$floatDCC))
+                badDayConvZC <- c(badDayConvZC, as.character(ratesInfo[[2]]$badDayConvention))
+                holidays <- c(holidays, as.character(ratesInfo[[2]]$swapCalendars))
             }
         }
     }
@@ -208,4 +215,48 @@ upfront <- function(TDate,
 
 }
 
+upfront.df <- function(TDate,
+                    baseDate = TDate,
+                    currency = "USD",
 
+                    zeroCurve,
+                    
+                    valueDate = NULL,
+                    benchmarkDate = NULL,
+                    startDate = NULL,
+                    endDate = NULL,
+                    stepinDate = NULL,
+                    maturity = "5Y",
+                    
+                    dccCDS = "ACT/360",
+                    freqCDS = "1Q",
+                    stubCDS = "F",
+                    badDayConvCDS = "F",
+                    calendar = "None",
+                    
+                    parSpread,
+                    coupon = 100,
+                    recoveryRate = 0.4,
+                    isPriceClean = FALSE,
+                    payAccruedOnDefault = TRUE,
+                    notional = 1e7) {
+    zeroCurve <- zeroCurve[zeroCurve$date %in% baseDate, ]
+	types <- zeroCurve$types
+	rates <- as.numeric(unlist(strsplit(zeroCurve$rates, split = ";")))
+    expiries <- unlist(strsplit(zeroCurve$expiries, split = ";"))
+    mmDCC <- zeroCurve$mmDCC
+    fixedSwapFreq <- zeroCurve$fixedSwapFreq
+    floatSwapFreq <- zeroCurve$floatSwapFreq
+    fixedSwapDCC <- zeroCurve$fixedSwapDCC
+    floatSwapDCC <- zeroCurve$floatSwapDCC
+    badDayConvZC <- zeroCurve$badDayConvZC
+    holidays <- zeroCurve$holidays
+    
+    upfront(
+        TDate, baseDate, currency,
+        types, rates, expiries, mmDCC, fixedSwapFreq, floatSwapFreq, fixedSwapDCC, floatSwapDCC, badDayConvZC, holidays,
+        valueDate, benchmarkDate, startDate, endDate, stepinDate, maturity,
+        dccCDS, freqCDS, stubCDS, badDayConvCDS, calendar,
+        parSpread, coupon, recoveryRate, isPriceClean, payAccruedOnDefault, notional
+    )
+}

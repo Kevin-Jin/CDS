@@ -157,7 +157,11 @@ SEXP calcUpfrontTest
   //  static char routine[] = "JpmcdsCdsoneUpfrontCharge";
 
   // my vars
-  int datesLen, typesLen, mmDCCLen, fixedSwapFreqLen, floatSwapFreqLen, fixedSwapDCCLen, floatSwapDCCLen, badDayConvZCLen, holidaysLen, spreadsLen, resultLen, numInstruments, i, j, k;
+  int resultLen, numInstruments, i, j, k, gc_protected, baseDateLen,
+    typesLen, mmDCCLen, fixedSwapFreqLen, floatSwapFreqLen, fixedSwapDCCLen, floatSwapDCCLen, badDayConvZCLen, holidaysLen,
+	todayDateLen, valueDateLen, benchmarkDateLen, startDateLen, endDateLen, stepinDateLen,
+    dccCDSLen, ivlCDSLen, stubCDSLen, badDayConvCDSLen, calendarLen,
+    parSpreadLen, couponRateLen, recoveryRateLen, isPriceCleanLen, payAccruedOnDefaultLen, notionalLen;
   TDate baseDate, today, benchmarkDate, startDate, endDate, stepinDate,valueDate;
   int isPriceClean, payAccruedOnDefault;
   SEXP upfrontPayment, is_na_at;
@@ -177,77 +181,12 @@ SEXP calcUpfrontTest
 
   // new
   char *pt_badDayConvZC;
-  double *parSpread_for_upf, couponRate_for_upf, recoveryRate_for_upf, notional_for_upf, *upfrontPayments, *result;
-  int gc_protected;
+  double *parSpread_for_upf, couponRate_for_upf, recoveryRate_for_upf, *upfrontPayments, *result;
 
-  gc_protected = 0;
-  datesLen = length(baseDate_input) / 3;
-  typesLen = length(types);
-  mmDCCLen = length(mmDCC);
-  fixedSwapFreqLen = length(fixedSwapFreq);
-  floatSwapFreqLen = length(floatSwapFreq);
-  fixedSwapDCCLen = length(fixedSwapDCC);
-  floatSwapDCCLen = length(floatSwapDCC);
-  badDayConvZCLen = length(badDayConvZC);
-  holidaysLen = length(holidays);
-  spreadsLen = length(parSpread);
-  resultLen = MAX(datesLen, spreadsLen);
-  result = NEW_ARRAY1(double, resultLen);
-  for (i = 0; i < resultLen; ++i)
-    result[i] = NA_REAL;
-
-  todayDate_input = coerceVector(todayDate_input,INTSXP);
-  today = JpmcdsDate((long)INTEGER(todayDate_input)[0], 
-		     (long)INTEGER(todayDate_input)[1], 
-		     (long)INTEGER(todayDate_input)[2]);
-
-  valueDate_input = coerceVector(valueDate_input,INTSXP);
-  valueDate = JpmcdsDate((long)INTEGER(valueDate_input)[0], 
-			 (long)INTEGER(valueDate_input)[1], 
-			 (long)INTEGER(valueDate_input)[2]);
-
-  benchmarkDate_input = coerceVector(benchmarkDate_input,INTSXP);
-  benchmarkDate = JpmcdsDate((long)INTEGER(benchmarkDate_input)[0], 
-			     (long)INTEGER(benchmarkDate_input)[1],
-			     (long)INTEGER(benchmarkDate_input)[2]);
-
-  startDate_input = coerceVector(startDate_input,INTSXP);
-  startDate = JpmcdsDate((long)INTEGER(startDate_input)[0], 
-			 (long)INTEGER(startDate_input)[1], 
-			 (long)INTEGER(startDate_input)[2]);
-
-  endDate_input = coerceVector(endDate_input,INTSXP);
-  endDate = JpmcdsDate((long)INTEGER(endDate_input)[0],
-		       (long)INTEGER(endDate_input)[1],
-		       (long)INTEGER(endDate_input)[2]);
-
-  stepinDate_input = coerceVector(stepinDate_input,INTSXP);
-  stepinDate = JpmcdsDate((long)INTEGER(stepinDate_input)[0],
-		       (long)INTEGER(stepinDate_input)[1],
-		       (long)INTEGER(stepinDate_input)[2]);
-
-  types = coerceVector(types, STRSXP);
-  holidays = coerceVector(holidays, STRSXP);
-  rates = coerceVector(rates,REALSXP);
-  mmDCC = coerceVector(mmDCC, STRSXP);
-  fixedSwapFreq = coerceVector(fixedSwapFreq, STRSXP);
-  floatSwapFreq = coerceVector(floatSwapFreq, STRSXP);
-  fixedSwapDCC = coerceVector(fixedSwapDCC, STRSXP);
-  floatSwapDCC = coerceVector(floatSwapDCC, STRSXP);
-
-  calendar = coerceVector(calendar, STRSXP);
-  pt_calendar = (char *) CHAR(STRING_ELT(calendar,0));
-
-  couponRate_for_upf = *REAL(couponRate);
-  recoveryRate_for_upf = *REAL(recoveryRate);
-  isPriceClean = *INTEGER(isPriceClean_input);
-  payAccruedOnDefault = *INTEGER(payAccruedOnDefault_input);
-  notional_for_upf = *REAL(notional);
-
-  badDayConvZC = coerceVector(badDayConvZC, STRSXP);
-
-  badDayConvCDS = coerceVector(badDayConvCDS, STRSXP);
-  pt_badDayConvCDS = (char *) CHAR(STRING_ELT(badDayConvCDS,0));
+  static char *routine = "CalcUpfrontCharge";
+  TDateInterval ivl;
+  TStubMethod stub;
+  long dcc;
 
   TDateInterval fixedSwapIvl_curve;
   TDateInterval floatSwapIvl_curve;
@@ -259,21 +198,82 @@ SEXP calcUpfrontTest
   long mmDCC_zc_main;
   static char  *routine_zc_main = "BuildExampleZeroCurve";
 
-  expiries = coerceVector(expiries, VECSXP);
+  TDate *dates_main;
+  TDateInterval tmp;
+
+  typesLen = length(types);
+  mmDCCLen = length(mmDCC);
+  fixedSwapFreqLen = length(fixedSwapFreq);
+  floatSwapFreqLen = length(floatSwapFreq);
+  fixedSwapDCCLen = length(fixedSwapDCC);
+  floatSwapDCCLen = length(floatSwapDCC);
+  badDayConvZCLen = length(badDayConvZC);
+  holidaysLen = length(holidays);
+
+  baseDateLen = length(baseDate_input) / 3;
+  todayDateLen = length(todayDate_input) / 3;
+  valueDateLen = length(valueDate_input) / 3;
+  benchmarkDateLen = length(benchmarkDate_input) / 3;
+  startDateLen = length(startDate_input) / 3;
+  endDateLen = length(endDate_input) / 3;
+  stepinDateLen = length(stepinDate_input) / 3;
+
+  dccCDSLen = length(dccCDS);
+  ivlCDSLen = length(ivlCDS);
+  stubCDSLen = length(stubCDS);
+  badDayConvCDSLen = length(badDayConvCDS);
+  calendarLen = length(calendar);
+
+  parSpreadLen = length(parSpread);
+  couponRateLen = length(couponRate);
+  recoveryRateLen = length(recoveryRate);
+  isPriceCleanLen = length(isPriceClean_input);
+  payAccruedOnDefaultLen = length(payAccruedOnDefault_input);
+  notionalLen = length(notional);
+
+  gc_protected = 0;
+  resultLen = MAX(MAX(baseDateLen, parSpreadLen), couponRateLen);
+  result = NEW_ARRAY1(double, resultLen);
+  for (i = 0; i < resultLen; ++i)
+    result[i] = NA_REAL;
 
   baseDate_input = coerceVector(baseDate_input,INTSXP);
+  types = coerceVector(types, STRSXP);
+  rates = coerceVector(rates, REALSXP);
+  expiries = coerceVector(expiries, VECSXP);
+  mmDCC = coerceVector(mmDCC, STRSXP);
+
+  fixedSwapFreq = coerceVector(fixedSwapFreq, STRSXP);
+  floatSwapFreq = coerceVector(floatSwapFreq, STRSXP);
+  fixedSwapDCC = coerceVector(fixedSwapDCC, STRSXP);
+  floatSwapDCC = coerceVector(floatSwapDCC, STRSXP);
+  badDayConvZC = coerceVector(badDayConvZC, STRSXP);
+  holidays = coerceVector(holidays, STRSXP);
+
+  todayDate_input = coerceVector(todayDate_input,INTSXP);
+  valueDate_input = coerceVector(valueDate_input,INTSXP);
+  benchmarkDate_input = coerceVector(benchmarkDate_input,INTSXP);
+  startDate_input = coerceVector(startDate_input,INTSXP);
+  endDate_input = coerceVector(endDate_input,INTSXP);
+  stepinDate_input = coerceVector(stepinDate_input,INTSXP);
+
+  dccCDS = coerceVector(dccCDS, STRSXP);
+  ivlCDS = coerceVector(ivlCDS, STRSXP);
+  stubCDS = coerceVector(stubCDS, STRSXP);
+  badDayConvCDS = coerceVector(badDayConvCDS, STRSXP);
+  calendar = coerceVector(calendar, STRSXP);
+
   PROTECT(is_na_at = is_na(baseDate_input));
   gc_protected++;
-  if (LOGICAL(is_na_at)[datesLen])
+  discCurve = NEW_ARRAY1(TCurve*, baseDateLen);
+  if (LOGICAL(is_na_at)[baseDateLen])
     // vector is entirely NA
     goto done;
   
-  TDate *dates_main;// = NULL;
-  discCurve = NEW_ARRAY1(TCurve*, datesLen);
   k = 0;
-  for (i = 0; i < datesLen; i++)
+  for (i = 0; i < baseDateLen; i++)
   {
-    if (LOGICAL(is_na_at)[0 * datesLen + i] || LOGICAL(is_na_at)[1 * datesLen + i] || LOGICAL(is_na_at)[2 * datesLen + i] || STRING_ELT(types, i % typesLen) == NA_STRING)
+    if (LOGICAL(is_na_at)[0 * baseDateLen + i] || LOGICAL(is_na_at)[1 * baseDateLen + i] || LOGICAL(is_na_at)[2 * baseDateLen + i] || STRING_ELT(types, i % typesLen) == NA_STRING)
     {
       discCurve[i] = NULL;
       continue;
@@ -307,15 +307,14 @@ SEXP calcUpfrontTest
     pt_holidays = (char *) CHAR(STRING_ELT(holidays, i % holidaysLen));
     pt_types = (char *) CHAR(STRING_ELT(types, i % typesLen));
     
-	baseDate = JpmcdsDate((long)INTEGER(baseDate_input)[0 * datesLen + i], 
-			(long)INTEGER(baseDate_input)[1 * datesLen + i], 
-			(long)INTEGER(baseDate_input)[2 * datesLen + i]);
+	baseDate = JpmcdsDate((long)INTEGER(baseDate_input)[0 * baseDateLen + i], 
+			(long)INTEGER(baseDate_input)[1 * baseDateLen + i], 
+			(long)INTEGER(baseDate_input)[2 * baseDateLen + i]);
     
     numInstruments = strlen(pt_types); // for zerocurve
     dates_main = NEW_ARRAY1(TDate, numInstruments);
     for (j = 0; j < numInstruments; j++)
     {
-      TDateInterval tmp;
       // offsetting expiries by k shouldn't be problematic since we checked for
       // matching lengths on expiries and types in upfront.R
       if (JpmcdsStringToDateInterval(strdup(CHAR(asChar(VECTOR_ELT(expiries, j + k)))), routine_zc_main, &tmp) != SUCCESS)
@@ -353,39 +352,55 @@ SEXP calcUpfrontTest
     if (discCurve[i] == NULL) JpmcdsErrMsg("IR curve not available ... \n");
   }
 
-    dccCDS = coerceVector(dccCDS, STRSXP);
-    pt_dccCDS = (char *) CHAR(STRING_ELT(dccCDS,0));
+  PROTECT(is_na_at = is_na(parSpread));
+  gc_protected++;
+  if (LOGICAL(is_na_at)[parSpreadLen])
+    // vector is entirely NA
+    goto done;
 
-    ivlCDS = coerceVector(ivlCDS, STRSXP);
-    pt_ivlCDS = (char *) CHAR(STRING_ELT(ivlCDS,0));
-
-    stubCDS = coerceVector(stubCDS, STRSXP);
-    pt_stubCDS = (char *) CHAR(STRING_ELT(stubCDS,0));
-
-    static char *routine = "CalcUpfrontCharge";
-    TDateInterval ivl;
-    TStubMethod stub;
-    long dcc;
-
-    if (JpmcdsStringToDayCountConv(pt_dccCDS, &dcc) != SUCCESS)
-        goto done;
-    
-    if (JpmcdsStringToDateInterval(pt_ivlCDS, routine, &ivl) != SUCCESS)
-        goto done;
-
-    if (JpmcdsStringToStubMethod(pt_stubCDS, &stub) != SUCCESS)
-        goto done;
-
-    PROTECT(is_na_at = is_na(parSpread));
-    gc_protected++;
-    if (LOGICAL(is_na_at)[spreadsLen])
-      // vector is entirely NA
-      goto done;
-
-    parSpread_for_upf = REAL(parSpread);
-    for (i = 0; i < resultLen; ++i) {
-      if (LOGICAL(is_na_at)[i % spreadsLen] || discCurve[i % datesLen] == NULL)
+  parSpread_for_upf = REAL(parSpread);
+  for (i = 0; i < resultLen; ++i) {
+      if (LOGICAL(is_na_at)[i % parSpreadLen] || discCurve[i % baseDateLen] == NULL)
         continue;
+
+      today = JpmcdsDate((long)INTEGER(todayDate_input)[0 * todayDateLen + i % todayDateLen], 
+		     (long)INTEGER(todayDate_input)[1 * todayDateLen + i % todayDateLen], 
+		     (long)INTEGER(todayDate_input)[2 * todayDateLen + i % todayDateLen]);
+      valueDate = JpmcdsDate((long)INTEGER(valueDate_input)[0 * valueDateLen + i % valueDateLen], 
+			 (long)INTEGER(valueDate_input)[1 * valueDateLen + i % valueDateLen], 
+			 (long)INTEGER(valueDate_input)[2 * valueDateLen + i % valueDateLen]);
+      benchmarkDate = JpmcdsDate((long)INTEGER(benchmarkDate_input)[0 * benchmarkDateLen + i % benchmarkDateLen], 
+			     (long)INTEGER(benchmarkDate_input)[1 * benchmarkDateLen + i % benchmarkDateLen],
+			     (long)INTEGER(benchmarkDate_input)[2 * benchmarkDateLen + i % benchmarkDateLen]);
+      startDate = JpmcdsDate((long)INTEGER(startDate_input)[0 * startDateLen + i % startDateLen], 
+			 (long)INTEGER(startDate_input)[1 * startDateLen + i % startDateLen], 
+			 (long)INTEGER(startDate_input)[2 * startDateLen + i % startDateLen]);
+      endDate = JpmcdsDate((long)INTEGER(endDate_input)[0 * endDateLen + i % endDateLen],
+		       (long)INTEGER(endDate_input)[1 * endDateLen + i % endDateLen],
+		       (long)INTEGER(endDate_input)[2 * endDateLen + i % endDateLen]);
+      stepinDate = JpmcdsDate((long)INTEGER(stepinDate_input)[0 * stepinDateLen + i % stepinDateLen],
+		       (long)INTEGER(stepinDate_input)[1 * stepinDateLen + i % stepinDateLen],
+		       (long)INTEGER(stepinDate_input)[2 * stepinDateLen + i % stepinDateLen]);
+
+      pt_dccCDS = (char *) CHAR(STRING_ELT(dccCDS, i % dccCDSLen));
+      if (JpmcdsStringToDayCountConv(pt_dccCDS, &dcc) != SUCCESS)
+        goto done;
+
+      pt_ivlCDS = (char *) CHAR(STRING_ELT(ivlCDS, i % ivlCDSLen));
+      if (JpmcdsStringToDateInterval(pt_ivlCDS, routine, &ivl) != SUCCESS)
+        goto done;
+
+      pt_stubCDS = (char *) CHAR(STRING_ELT(stubCDS, i % stubCDSLen));
+      if (JpmcdsStringToStubMethod(pt_stubCDS, &stub) != SUCCESS)
+        goto done;
+
+      pt_calendar = (char *) CHAR(STRING_ELT(calendar, i % calendarLen));
+      couponRate_for_upf = REAL(couponRate)[i % couponRateLen];
+      recoveryRate_for_upf = REAL(recoveryRate)[i % recoveryRateLen];
+      isPriceClean = INTEGER(isPriceClean_input)[i % isPriceCleanLen];
+      payAccruedOnDefault = INTEGER(payAccruedOnDefault_input)[i % payAccruedOnDefaultLen];
+      pt_badDayConvCDS = (char *) CHAR(STRING_ELT(badDayConvCDS, i % badDayConvCDSLen));
+
       if (JpmcdsCdsoneUpfrontCharge(today,
 				  valueDate,
 				  benchmarkDate,
@@ -399,21 +414,22 @@ SEXP calcUpfrontTest
 				  dcc,
 				  (char) *pt_badDayConvCDS,
 				  pt_calendar,
-				  discCurve[i % datesLen],
-				  parSpread_for_upf[i % spreadsLen]/10000.0, 
+				  discCurve[i % baseDateLen],
+				  parSpread_for_upf[i % parSpreadLen]/10000.0, 
 				  recoveryRate_for_upf,
 				  isPriceClean,
 				  &result[i]) != SUCCESS) 
         goto done;
-    }
+  }
 
  done:
     PROTECT(upfrontPayment = allocVector(REALSXP, resultLen));
     gc_protected++;
     upfrontPayments = REAL(upfrontPayment);
     for (i = 0; i < resultLen; ++i)
-      upfrontPayments[i] = result[i] * notional_for_upf;
+      upfrontPayments[i] = result[i] * REAL(notional)[i % notionalLen];
     UNPROTECT(gc_protected);
+    FREE(discCurve);
     FREE(result);
     return upfrontPayment;
 }
