@@ -22,15 +22,26 @@ extern "C"
 #endif
 
 #ifndef MAX
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
+#define MAX(a,b) ({ \
+  __typeof__ (a) _a = (a); \
+  __typeof__ (b) _b = (b); \
+  _a > _b ? _a : _b; \
+})
 #endif
 
 #ifndef MIN
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define MIN(a,b) ({ \
+  __typeof__ (a) _a = (a); \
+  __typeof__ (b) _b = (b); \
+  _a < _b ? _a : _b; \
+})
 #endif
 
 #ifndef ABS
-#define ABS(x) ((x) > 0 ? (x) : -(x))
+#define ABS(x) ({ \
+  __typeof__ (x) _x = (x); \
+  _x > 0 ? _x : -_x; \
+})
 #endif
 
 /* This should be correct on every platform that supports the IEEE

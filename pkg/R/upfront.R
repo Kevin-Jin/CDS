@@ -115,28 +115,61 @@ upfront <- function(TDate,
     endDate <- .separateYMD(endDate)
     stepinDate <- .separateYMD(stepinDate)
 
-    stopifnot(all.equal(length(rates), length(expiries), nchar(types)))    
     if ((is.null(types) | is.null(rates) | is.null(expiries))){
+        # want to concatenate to initially empty vectors in the loop below
+        types = NULL
+        rates = NULL
+        expiries = NULL
+        mmDCC = NULL
+        fixedSwapFreq = NULL
+        floatSwapFreq = NULL
+        fixedSwapDCC = NULL
+        floatSwapDCC = NULL
+        badDayConvZC = NULL
+        holidays = NULL
         
-        ratesInfo <- getRates(date = ratesDate, currency = as.character(currency))
-        
-        if (class(ratesInfo) == "character"){
-            return(ratesInfo)
-        } else {
-            
-            types = paste(as.character(ratesInfo[[1]]$type), collapse = "")
-            rates = as.numeric(as.character(ratesInfo[[1]]$rate))
-            expiries = as.character(ratesInfo[[1]]$expiry)
-            mmDCC = as.character(ratesInfo[[2]]$mmDCC)
-            
-            fixedSwapFreq = as.character(ratesInfo[[2]]$fixedFreq)
-            floatSwapFreq = as.character(ratesInfo[[2]]$floatFreq)
-            fixedSwapDCC = as.character(ratesInfo[[2]]$fixedDCC)
-            floatSwapDCC = as.character(ratesInfo[[2]]$floatDCC)
-            badDayConvZC = as.character(ratesInfo[[2]]$badDayConvention)
-            holidays = as.character(ratesInfo[[2]]$swapCalendars)
+        ratesInfos <- getRates(date = ratesDate, currency = as.character(currency))
+        for (i in 1:length(ratesInfos)) {
+            ratesInfo <- ratesInfos[[i]]
+            if (class(ratesInfo) == "character"){
+                # TODO: return NA for all values, set baseDate = NA if necessary
+                warning(ratesInfo)
+                types = c(types, NA)
+            } else {
+                types = c(types, paste(as.character(ratesInfo[[1]]$type), collapse = ""))
+                rates = c(rates, as.numeric(as.character(ratesInfo[[1]]$rate)))
+                expiries = c(expiries, as.character(ratesInfo[[1]]$expiry))
+                mmDCC = c(mmDCC, as.character(ratesInfo[[2]]$mmDCC))
+                
+                fixedSwapFreq = c(fixedSwapFreq, as.character(ratesInfo[[2]]$fixedFreq))
+                floatSwapFreq = c(floatSwapFreq, as.character(ratesInfo[[2]]$floatFreq))
+                fixedSwapDCC = c(fixedSwapDCC, as.character(ratesInfo[[2]]$fixedDCC))
+                floatSwapDCC = c(floatSwapDCC, as.character(ratesInfo[[2]]$floatDCC))
+                badDayConvZC = c(badDayConvZC, as.character(ratesInfo[[2]]$badDayConvention))
+                holidays = c(holidays, as.character(ratesInfo[[2]]$swapCalendars))
+            }
         }
     }
+    # vector length checks for parallel arrays
+    correctLengths <- function() all.equal(length(rates), length(expiries), if (length(types) > 0) sum(nchar(types[!is.na(types)])) else 0)
+    stopifnot(correctLengths())
+    # we'll just recycle mmDCC, fixedSwapFreq, floatSwapFreq, fixedSwapDCC, floatSwapDCC, badDayConvZC, holidays
+    # in the C code if they're not all equal in length to length(ratesDate), but it's usually an error if
+    # their lengths are greater than length(ratesDate) or not some factor of length(ratesDate) because some values will
+    # be unused, so we should let the user know
+    numDates <- length(ratesDate)
+    warnSuspectLengths <- function(otherVector, desc) {
+        if (length(otherVector) > numDates) warning(paste("Passed in only", numDates, "dates for zero curve but", length(otherVector), "for", desc))
+        else if (numDates %% length(otherVector) != 0) warning(paste("Passed in", numDates, "dates for zero curve but only", length(otherVector), "for", desc))
+    }
+    warnSuspectLengths(types, "instrument types")
+    warnSuspectLengths(mmDCC, "instrument day count conventions")
+    warnSuspectLengths(fixedSwapFreq, "fixed leg frequencies")
+    warnSuspectLengths(floatSwapFreq, "fixed leg frequencies")
+    warnSuspectLengths(fixedSwapDCC, "fixed leg day count conventions")
+    warnSuspectLengths(floatSwapDCC, "float leg day count conventions")
+    warnSuspectLengths(badDayConvZC, "bad day conventions")
+    warnSuspectLengths(holidays, "holidays")
     
     .Call('calcUpfrontTest',
           baseDate,

@@ -1,3 +1,10 @@
+mem.recycle <- function(...){
+  dotList <- list(...)
+  max.length <- max(sapply(dotList, length))
+  lapply(dotList, rep, length=max.length)
+}
+
+
 #' Helper function to separate an input date into year, month, and
 #' day.
 #'
@@ -48,11 +55,13 @@
     
     dateWday <- as.POSIXlt(date)$wday
     ## change date to the most recent weekday if necessary
-    if (dateWday == 0){
-        date <- date + 1
-    } else if (dateWday == 6) {
-        date <- date + 2
-    }
+    date <- date + ifelse(dateWday == 0,
+        1,
+    ifelse(dateWday == 6,
+        2,
+    # else
+        0
+    ))
     return(date)
 }
 
@@ -98,12 +107,15 @@ CDSdf <- function(object){
 
     ## get the remainder X after dividing it by 3 and then move back X
     ## month
-    if (date$mon %in% c(2, 5, 8, 11)){
-        if (date$mday < 20)
-            date$mon <- date$mon - 3
-    } else { 
-        date$mon <- date$mon - (as.numeric(format(date, "%m")) %% 3)
-    }
+    date$mon <- ifelse(date$mon %in% c(2, 5, 8, 11),
+        ifelse(date$mday < 20,
+            date$mon - 3,
+        # else
+            date$mon
+        ),
+    # else
+        date$mon - (as.numeric(format(date, "%m")) %% 3
+    ))
     date$mday <- 20
     accrualDate <- .adjNextBusDay(as.Date(as.POSIXct(date)))
 
