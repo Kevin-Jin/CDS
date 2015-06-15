@@ -18,6 +18,8 @@
 #include "tcurve.h"
 
 #define NEW_ARRAY1(t,n)          (t *) JpmcdsMallocSafe(sizeof(t)*(n))
+//override JP Morgan's ISDA CDS standard model cerror.c with R's error handling
+#define JpmcdsErrMsg(...) error(__VA_ARGS__)
 
 SEXP is_na(SEXP x)
 {
@@ -237,31 +239,53 @@ SEXP calcUpfrontTest
   for (i = 0; i < resultLen; ++i)
     result[i] = NA_REAL;
 
-  baseDate_input = coerceVector(baseDate_input,INTSXP);
-  types = coerceVector(types, STRSXP);
-  rates = coerceVector(rates, REALSXP);
-  expiries = coerceVector(expiries, VECSXP);
-  mmDCC = coerceVector(mmDCC, STRSXP);
+  baseDate_input = PROTECT(coerceVector(baseDate_input,INTSXP));
+  gc_protected++;
+  types = PROTECT(coerceVector(types, STRSXP));
+  gc_protected++;
+  rates = PROTECT(coerceVector(rates, REALSXP));
+  gc_protected++;
+  expiries = PROTECT(coerceVector(expiries, VECSXP));
+  gc_protected++;
+  mmDCC = PROTECT(coerceVector(mmDCC, STRSXP));
+  gc_protected++;
 
-  fixedSwapFreq = coerceVector(fixedSwapFreq, STRSXP);
-  floatSwapFreq = coerceVector(floatSwapFreq, STRSXP);
-  fixedSwapDCC = coerceVector(fixedSwapDCC, STRSXP);
-  floatSwapDCC = coerceVector(floatSwapDCC, STRSXP);
-  badDayConvZC = coerceVector(badDayConvZC, STRSXP);
-  holidays = coerceVector(holidays, STRSXP);
+  fixedSwapFreq = PROTECT(coerceVector(fixedSwapFreq, STRSXP));
+  gc_protected++;
+  floatSwapFreq = PROTECT(coerceVector(floatSwapFreq, STRSXP));
+  gc_protected++;
+  fixedSwapDCC = PROTECT(coerceVector(fixedSwapDCC, STRSXP));
+  gc_protected++;
+  floatSwapDCC = PROTECT(coerceVector(floatSwapDCC, STRSXP));
+  gc_protected++;
+  badDayConvZC = PROTECT(coerceVector(badDayConvZC, STRSXP));
+  gc_protected++;
+  holidays = PROTECT(coerceVector(holidays, STRSXP));
+  gc_protected++;
 
-  todayDate_input = coerceVector(todayDate_input,INTSXP);
-  valueDate_input = coerceVector(valueDate_input,INTSXP);
-  benchmarkDate_input = coerceVector(benchmarkDate_input,INTSXP);
-  startDate_input = coerceVector(startDate_input,INTSXP);
-  endDate_input = coerceVector(endDate_input,INTSXP);
-  stepinDate_input = coerceVector(stepinDate_input,INTSXP);
+  todayDate_input = PROTECT(coerceVector(todayDate_input,INTSXP));
+  gc_protected++;
+  valueDate_input = PROTECT(coerceVector(valueDate_input,INTSXP));
+  gc_protected++;
+  benchmarkDate_input = PROTECT(coerceVector(benchmarkDate_input,INTSXP));
+  gc_protected++;
+  startDate_input = PROTECT(coerceVector(startDate_input,INTSXP));
+  gc_protected++;
+  endDate_input = PROTECT(coerceVector(endDate_input,INTSXP));
+  gc_protected++;
+  stepinDate_input = PROTECT(coerceVector(stepinDate_input,INTSXP));
+  gc_protected++;
 
-  dccCDS = coerceVector(dccCDS, STRSXP);
-  ivlCDS = coerceVector(ivlCDS, STRSXP);
-  stubCDS = coerceVector(stubCDS, STRSXP);
-  badDayConvCDS = coerceVector(badDayConvCDS, STRSXP);
-  calendar = coerceVector(calendar, STRSXP);
+  dccCDS = PROTECT(coerceVector(dccCDS, STRSXP));
+  gc_protected++;
+  ivlCDS = PROTECT(coerceVector(ivlCDS, STRSXP));
+  gc_protected++;
+  stubCDS = PROTECT(coerceVector(stubCDS, STRSXP));
+  gc_protected++;
+  badDayConvCDS = PROTECT(coerceVector(badDayConvCDS, STRSXP));
+  gc_protected++;
+  calendar = PROTECT(coerceVector(calendar, STRSXP));
+  gc_protected++;
 
   PROTECT(is_na_at = is_na(baseDate_input));
   gc_protected++;
