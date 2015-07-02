@@ -358,7 +358,10 @@ SEXP calcUpfrontTest
 
     // doing pointer arithmetic on REAL(rates) shouldn't be problematic since we checked for
     // matching lengths on rates and types in upfront.R
-    discCurve[i] = JpmcdsBuildIRZeroCurve(baseDate,
+    if (numInstruments == 0)
+      discCurve[i] = NULL;
+    else
+      discCurve[i] = JpmcdsBuildIRZeroCurve(baseDate,
 				       pt_types,
 				       dates_main,
 				       REAL(rates) + k,
@@ -373,7 +376,7 @@ SEXP calcUpfrontTest
     FREE(dates_main);
     k += numInstruments;
 
-    if (discCurve[i] == NULL) JpmcdsErrMsg("IR curve not available ... \n");
+    if (discCurve[i] == NULL && numInstruments != 0) JpmcdsErrMsg("IR curve not available ... \n");
   }
 
   PROTECT(is_na_at = is_na(parSpread));

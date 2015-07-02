@@ -46,6 +46,7 @@ getRates <- function(date = Sys.Date(), currency = "USD"){
     uniqueURLs <- unique(ratesURLs)
     indices <- unlist(lapply(ratesURLs, function(x) which(x == uniqueURLs)))
     rateInfos <- lapply(uniqueURLs, function(ratesURL) {
+    tryCatch({
         xmlParsedIn <- .downloadRates(ratesURL)
 
         if (class(xmlParsedIn)[1] == "character"){
@@ -57,29 +58,40 @@ getRates <- function(date = Sys.Date(), currency = "USD"){
             curveRates <- c(rates$deposits[names(rates$deposits) == "curvepoint"],
                             rates$swaps[names(rates$swaps) == "curvepoint"])
             
-            
-            df <- do.call(rbind, strsplit(curveRates, split = "[MY]", perl = TRUE))
-            rownames(df) <- NULL
-            df <- cbind(df, "Y")
-            df[1: (max(which(df[,1] == 1)) - 1), 3] <- "M"
-            
-            ratesDf <- data.frame(expiry = paste(df[,1], df[,3], sep = ""),
-                                  matureDate = substring(df[,2], 0, 10),
-                                  rate = substring(df[,2], 11),
-                                  type = c(rep("M", sum(names(rates$deposits) == "curvepoint")),
-                                      rep("S", sum(names(rates$swaps) == "curvepoint"))))
+            if (length(curveRates) != 0) {
+              # each element in curveRates is a smooshed string because we don't
+              # want to recurse to a third level of xmlSApply in order to simplify
+              # logic with calendars. this regex extracts tenor, maturitydate, and parrate
+              df <- data.frame(matrix(str_match(curveRates, "^(\\d+[MY])(\\d{4}-\\d{2}-\\d{2})(\\d+\\.?\\d*|\\.\\d+)$")[, -1], ncol = 3))
+              colnames(df) <- c("expiry", "matureDate", "rate")
+              ratesDf <- cbind(df, type = c(rep("M", sum(names(rates$deposits) == "curvepoint")),
+                                            rep("S", sum(names(rates$swaps) == "curvepoint"))))
+            } else {
+              # some holidays, e.g. MLK Jr day + 1, George Washington day + 0,
+              # Independence Day + 1, Labor Day + 1, Columbus Day + 1,
+              # Veterans Day + 1, Thanksgiving + 1 in 2005 and some in 2006 are
+              # missing curve points
+              ratesDf <- data.frame(expiry = NULL, matureDate = NULL, rate = NULL, type = NULL)
+            }
             dccDf <- data.frame(effectiveDate = rates$effectiveasof[[1]],
                                 badDayConvention = rates$baddayconvention,
                                 mmDCC = rates$deposits[['daycountconvention']],
                                 mmCalendars = rates$deposits[['calendars']],
-                                fixedDCC = rates$swaps[['fixeddaycountconvention']],
-                                floatDCC = rates$swaps[['floatingdaycountconvention']],
+                                # InterestRates_USD_20090415.xml and InterestRates_USD_20090414.xml
+                                fixedDCC = rates$swaps[[if ('fixeddaycountconvention' %in% names(rates$swaps)) 'fixeddaycountconvention' else 'daycountconvention']],
+                                floatDCC = rates$swaps[[if ('floatingdaycountconvention' %in% names(rates$swaps)) 'floatingdaycountconvention' else 'daycountconvention']],
                                 fixedFreq = rates$swaps[['fixedpaymentfrequency']],
                                 floatFreq = rates$swaps[['floatingpaymentfrequency']],
                                 swapCalendars = rates$swaps[['calendars']])
             
+            # InterestRates_USD_20071129.xml fat finger.
+            # appears that 4 and 8 are transposed in .084648 since 15Y is 4.81% and 30Y is 4.92%
+            if (as.character(dccDf$effectiveDate) == "2007-11-30")
+              levels(ratesDf$rate)[ratesDf[as.character(ratesDf$expiry) == "20Y", "rate"]] <- 0.048648
+            
             return(list(ratesDf, dccDf))
         }
+    }, error = function(e) { print(paste(ratesURL, e, sep = ": ")) })
     })[indices]
     return(rateInfos)
 }
