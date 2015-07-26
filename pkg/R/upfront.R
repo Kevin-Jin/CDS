@@ -1,8 +1,12 @@
+"%??%" <- coalesce <- function(..., default = NULL) c(Filter(Negate(is.null), list(...)), list(default))[[1]]
+"coalesce<-" <- function(x, value) coalesce(x, value)
+
 #' Calculate dirty upfront payments from conventional spread
 #'
 #' @param TDate is when the trade is executed, denoted as T. 
 #' @param baseDate is the start date for the IR curve. Default is TDate. 
 #' @param currency in which CDS is denominated. 
+#' @param zeroCurve is a data frame that represents the LIBOR curve.
 #' @param types is a string indicating the names of the instruments
 #' used for the yield curve. 'M' means money market rate; 'S' is swap
 #' rate.
@@ -68,6 +72,8 @@ upfront <- function(TDate,
                     baseDate = TDate,
                     currency = "USD",
 
+                    zeroCurve = NULL,
+
                     types = NULL,
                     rates = NULL,
                     expiries = NULL,
@@ -101,21 +107,30 @@ upfront <- function(TDate,
 
     ratesDate <- baseDate
     cdsDates <- getDates(TDate = as.Date(TDate), maturity = maturity)
-    if (is.null(valueDate)) valueDate <- cdsDates$valueDate
-    if (is.null(benchmarkDate)) benchmarkDate <- cdsDates$startDate
-    if (is.null(startDate)) startDate <- cdsDates$startDate
-    if (is.null(endDate)) endDate <- cdsDates$endDate
-    if (is.null(stepinDate)) stepinDate <- cdsDates$stepinDate
 
     baseDate <- .separateYMD(baseDate)
     today <- .separateYMD(TDate)
-    valueDate <- .separateYMD(valueDate)
-    benchmarkDate <- .separateYMD(benchmarkDate)
-    startDate <- .separateYMD(startDate)
-    endDate <- .separateYMD(endDate)
-    stepinDate <- .separateYMD(stepinDate)
+    valueDate <- .separateYMD(valueDate %??% cdsDates$valueDate)
+    benchmarkDate <- .separateYMD(benchmarkDate %??% cdsDates$startDate)
+    startDate <- .separateYMD(startDate %??% cdsDates$startDate)
+    endDate <- .separateYMD(endDate %??% cdsDates$endDate)
+    stepinDate <- .separateYMD(stepinDate %??% cdsDates$stepinDate)
 
-    if ((is.null(types) | is.null(rates) | is.null(expiries))){
+    zeroCurveMatches <- match(ratesDate, zeroCurve$date)
+    if (!any(is.na(zeroCurveMatches))) {
+        zeroCurve <- zeroCurve[zeroCurveMatches, ]
+        coalesce(types) <- zeroCurve$types
+        coalesce(rates) <- as.numeric(unlist(strsplit(zeroCurve$rates, split = ";")))
+        coalesce(expiries) <- unlist(strsplit(zeroCurve$expiries, split = ";"))
+        coalesce(mmDCC) <- zeroCurve$mmDCC
+        coalesce(fixedSwapFreq) <- zeroCurve$fixedSwapFreq
+        coalesce(floatSwapFreq) <- zeroCurve$floatSwapFreq
+        coalesce(fixedSwapDCC) <- zeroCurve$fixedSwapDCC
+        coalesce(floatSwapDCC) <- zeroCurve$floatSwapDCC
+        coalesce(badDayConvZC) <- zeroCurve$badDayConvZC
+        coalesce(holidays) <- zeroCurve$holidays
+    }
+    if (is.null(types) || is.null(rates) || is.null(expiries)) {
         # want to concatenate to initially empty vectors in the loop below
         types <- NULL
         rates <- NULL
@@ -213,50 +228,4 @@ upfront <- function(TDate,
           notional,
           PACKAGE = "CDS")
 
-}
-
-upfront.df <- function(TDate,
-                    baseDate = TDate,
-                    currency = "USD",
-
-                    zeroCurve,
-                    
-                    valueDate = NULL,
-                    benchmarkDate = NULL,
-                    startDate = NULL,
-                    endDate = NULL,
-                    stepinDate = NULL,
-                    maturity = "5Y",
-                    
-                    dccCDS = "ACT/360",
-                    freqCDS = "1Q",
-                    stubCDS = "F",
-                    badDayConvCDS = "F",
-                    calendar = "None",
-                    
-                    parSpread,
-                    coupon = 100,
-                    recoveryRate = 0.4,
-                    isPriceClean = FALSE,
-                    payAccruedOnDefault = TRUE,
-                    notional = 1e7) {
-    zeroCurve <- zeroCurve[zeroCurve$date %in% baseDate, ]
-	types <- zeroCurve$types
-	rates <- as.numeric(unlist(strsplit(zeroCurve$rates, split = ";")))
-    expiries <- unlist(strsplit(zeroCurve$expiries, split = ";"))
-    mmDCC <- zeroCurve$mmDCC
-    fixedSwapFreq <- zeroCurve$fixedSwapFreq
-    floatSwapFreq <- zeroCurve$floatSwapFreq
-    fixedSwapDCC <- zeroCurve$fixedSwapDCC
-    floatSwapDCC <- zeroCurve$floatSwapDCC
-    badDayConvZC <- zeroCurve$badDayConvZC
-    holidays <- zeroCurve$holidays
-    
-    upfront(
-        TDate, baseDate, currency,
-        types, rates, expiries, mmDCC, fixedSwapFreq, floatSwapFreq, fixedSwapDCC, floatSwapDCC, badDayConvZC, holidays,
-        valueDate, benchmarkDate, startDate, endDate, stepinDate, maturity,
-        dccCDS, freqCDS, stubCDS, badDayConvCDS, calendar,
-        parSpread, coupon, recoveryRate, isPriceClean, payAccruedOnDefault, notional
-    )
 }

@@ -160,8 +160,9 @@ SEXP calcUpfrontTest
 
   // my vars
   int resultLen, numInstruments, i, j, k, gc_protected, baseDateLen,
-    typesLen, mmDCCLen, fixedSwapFreqLen, floatSwapFreqLen, fixedSwapDCCLen, floatSwapDCCLen, badDayConvZCLen, holidaysLen,
-	todayDateLen, valueDateLen, benchmarkDateLen, startDateLen, endDateLen, stepinDateLen,
+    typesLen, ratesLen, expiriesLen, mmDCCLen,
+    fixedSwapFreqLen, floatSwapFreqLen, fixedSwapDCCLen, floatSwapDCCLen, badDayConvZCLen, holidaysLen,
+    todayDateLen, valueDateLen, benchmarkDateLen, startDateLen, endDateLen, stepinDateLen,
     dccCDSLen, ivlCDSLen, stubCDSLen, badDayConvCDSLen, calendarLen,
     parSpreadLen, couponRateLen, recoveryRateLen, isPriceCleanLen, payAccruedOnDefaultLen, notionalLen;
   TDate baseDate, today, benchmarkDate, startDate, endDate, stepinDate,valueDate;
@@ -204,6 +205,8 @@ SEXP calcUpfrontTest
   TDateInterval tmp;
 
   typesLen = length(types);
+  ratesLen = length(rates);
+  expiriesLen = length(expiries);
   mmDCCLen = length(mmDCC);
   fixedSwapFreqLen = length(fixedSwapFreq);
   floatSwapFreqLen = length(floatSwapFreq);
@@ -341,7 +344,7 @@ SEXP calcUpfrontTest
     {
       // offsetting expiries by k shouldn't be problematic since we checked for
       // matching lengths on expiries and types in upfront.R
-      if (JpmcdsStringToDateInterval(strdup(CHAR(asChar(VECTOR_ELT(expiries, j + k)))), routine_zc_main, &tmp) != SUCCESS)
+      if (JpmcdsStringToDateInterval(strdup(CHAR(asChar(VECTOR_ELT(expiries, j + k % expiriesLen)))), routine_zc_main, &tmp) != SUCCESS)
       {
           JpmcdsErrMsg ("%s: invalid interval for element[%d, %d].\n", routine_zc_main, i, j);
           FREE(dates_main);
@@ -364,7 +367,7 @@ SEXP calcUpfrontTest
       discCurve[i] = JpmcdsBuildIRZeroCurve(baseDate,
 				       pt_types,
 				       dates_main,
-				       REAL(rates) + k,
+				       REAL(rates) + k % ratesLen,
 				       (long) numInstruments,
 				       (long) mmDCC_zc_main,
 				       (long) fixedSwapFreq_curve,
