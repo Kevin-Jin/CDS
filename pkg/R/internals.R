@@ -1,3 +1,6 @@
+"%??%" <- coalesce <- function(..., default = NULL) c(Filter(Negate(is.null), list(...)), list(default))[[1]]
+"coalesce<-" <- function(x, value) coalesce(x, value)
+
 mem.recycle <- function(...){
   dotList <- list(...)
   max.length <- max(sapply(dotList, length))

@@ -1,7 +1,22 @@
-#' Calculate dirty upfront payments from conventional spread
+#' Interpolate the spread of a constant maturity CDS contract over a set
+#' of dates given the term structure of CDS spreads for a set of several
+#' maturities on each of those dates. Useful for comparing prices of a
+#' CDS index to those of the on-the-run single name contracts of its
+#' constituents. This routine does not discount CDS prices to account
+#' for loss of liquidity premium on IMM roll dates. Even without the
+#' liquidity factor, prices calculated from synthetic spreads may not
+#" average to CDS index levels because of differences in restructuring
+#' clauses between underlying index contracts and single name contracts.
 #'
-#' @param TDate is when the trade is executed, denoted as T. 
-#' @param baseDate is the start date for the IR curve. Default is TDate. 
+#' @param parSpread term structure of CDS par spread in bps. Each
+#' row name must be a rolling maturity counted in months. Use
+#' rownames(parSpreads) <- getTenorMonths(rownames(parSpreads)) to
+#' assist you in converting Y and M strings. Each column name must be
+#' when the trade is executed, AKA TDate, in the form YYYY-MM-DD. Use
+#' colnames(parSpreads) <- format(as.Date(colnames(parSpreads)), %Y-%m-%d)
+#' to assist you in converting other date formats.
+#' @param baseDate is the start date for the IR curve. Default is
+#' colnames(parSpread). 
 #' @param currency in which CDS is denominated. 
 #' @param zeroCurve is a data frame that represents the LIBOR curve.
 #' @param types is a string indicating the names of the instruments
@@ -24,7 +39,6 @@
 #' days.
 #' @param valueDate is the date for which the present value of the CDS
 #' is calculated. aka cash-settle date. The default is T + 3.
-#' @param benchmarkDate Accrual begin date.
 #' @param startDate is when the CDS nomially starts in terms of
 #' premium payments, i.e. the number of days in the first period (and
 #' thus the amount of the first premium payment) is counted from this
@@ -33,26 +47,21 @@
 #' and protection ends. Any default after this date does not trigger a
 #' payment.
 #' @param stepinDate default is T + 1.
-#' @param maturity of the CDS contract.
+#' @param maturity constant maturity added to startDate, to use in
+#' transforming spreads.
 #' @param dccCDS day count convention of the CDS. Default is ACT/360.
 #' @param freqCDS date interval of the CDS contract.
 #' @param stubCDS is a character indicating the presence of a stub.
 #' @param badDayConvCDS refers to the bay day conversion for the CDS
 #' coupon payments. Default is "F", following.
 #' @param calendar refers to any calendar adjustment for the CDS.
-#' @param parSpread CDS par spread in bps.
 #' @param coupon quoted in bps. It specifies the payment amount from
 #' the protection buyer to the seller on a regular basis. The default
 #' is 100 bps.
 #' @param recoveryRate in decimal. Default is 0.4.
-#' @param isPriceClean refers to the type of upfront calculated. It is
-#' boolean. When \code{TRUE}, calculate principal only. When
-#' \code{FALSE}, calculate principal + accrual.
 #' @param payAccruedOnDefault is a partial payment of the premium made
 #' to the protection seller in the event of a default. Default is
 #' \code{TRUE}.
-#' @param notional is the amount of the underlying asset on which the
-#' payments are based. Default is 1e7, i.e. 10MM.
 #' @return a numeric indicating the amount of upfront payments from a
 #' protection buyer's perspective.
 #' @export
@@ -65,50 +74,45 @@
 #' notional = 1e7)
 #' 
 
-upfront <- function(TDate,
-                    baseDate = TDate,
-                    currency = "USD",
+rollingToConstantMaturity <- function(parSpread,
+        baseDate = NULL,
 
-                    zeroCurve = NULL,
+        zeroCurve = NULL,
 
-                    types = NULL,
-                    rates = NULL,
-                    expiries = NULL,
-                    mmDCC = "ACT/360",
-                    fixedSwapFreq = "6M",
-                    floatSwapFreq = "3M",
-                    fixedSwapDCC = "30/360",
-                    floatSwapDCC = "ACT/360",
-                    badDayConvZC = "M",
-                    holidays = "None",
-                    
-                    valueDate = NULL,
-                    benchmarkDate = NULL,
-                    startDate = NULL,
-                    endDate = NULL,
-                    stepinDate = NULL,
-                    maturity = "5Y",
-                    
-                    dccCDS = "ACT/360",
-                    freqCDS = "1Q",
-                    stubCDS = "F",
-                    badDayConvCDS = "F",
-                    calendar = "None",
-                    
-                    parSpread,
-                    coupon = 100,
-                    recoveryRate = 0.4,
-                    isPriceClean = FALSE,
-                    payAccruedOnDefault = TRUE,
-                    notional = 1e7){
+        types = NULL,
+        rates = NULL,
+        expiries = NULL,
+        mmDCC = "ACT/360",
+        fixedSwapFreq = "6M",
+        floatSwapFreq = "3M",
+        fixedSwapDCC = "30/360",
+        floatSwapDCC = "ACT/360",
+        badDayConvZC = "M",
+        holidays = "None",
+        
+        valueDate = NULL,
+        startDate = NULL,
+        endDate = NULL,
+        stepinDate = NULL,
+        maturity = "5Y",
+        
+        dccCDS = "ACT/360",
+        freqCDS = "1Q",
+        stubCDS = "F",
+        badDayConvCDS = "F",
+        calendar = "None",
+        
+        coupon = 100,
+        recoveryRate = 0.4,
+        payAccruedOnDefault = TRUE){
 
+    TDate = colnames(parSpread)
     ratesDate <- baseDate
-    cdsDates <- getDates(TDate = as.Date(TDate), maturity = maturity)
+    cdsDates <- getDates(TDate = as.Date(TDate), maturity = maturity, startDate = startDate)
 
     baseDate <- .separateYMD(baseDate)
     today <- .separateYMD(TDate)
     valueDate <- .separateYMD(valueDate %??% cdsDates$valueDate)
-    benchmarkDate <- .separateYMD(benchmarkDate %??% cdsDates$startDate)
     startDate <- .separateYMD(startDate %??% cdsDates$startDate)
     endDate <- .separateYMD(endDate %??% cdsDates$endDate)
     stepinDate <- .separateYMD(stepinDate %??% cdsDates$stepinDate)
@@ -171,7 +175,10 @@ upfront <- function(TDate,
     }
     # vector length checks for parallel arrays
     correctLengths <- function() all.equal(length(rates), length(expiries), if (length(types) > 0) sum(nchar(types[!is.na(types)])) else 0)
+    numericRowNames <- function() suppressWarnings(!is.na(as.numeric(rownames(parSpread))))
+    numericColNames <- function() suppressWarnings(!is.na(as.numeric(colnames(parSpread))))
     stopifnot(correctLengths())
+    stopifnot(all(numericRowNames(), numericColNames()))
     # we'll just recycle mmDCC, fixedSwapFreq, floatSwapFreq, fixedSwapDCC, floatSwapDCC, badDayConvZC, holidays
     # in the C code if they're not all equal in length to length(ratesDate), but it's usually an error if
     # their lengths are greater than length(ratesDate) or not some factor of length(ratesDate) because some values will
@@ -190,7 +197,7 @@ upfront <- function(TDate,
     warnSuspectLengths(badDayConvZC, "bad day conventions")
     warnSuspectLengths(holidays, "holidays")
     
-    .Call('calcUpfrontTest',
+    .Call('calcConstantMaturity',
           baseDate,
           types,
           rates,
@@ -206,7 +213,6 @@ upfront <- function(TDate,
           
           today,
           valueDate,
-          benchmarkDate,
           startDate,
           endDate,
           stepinDate,
@@ -220,9 +226,7 @@ upfront <- function(TDate,
           parSpread,
           coupon,
           recoveryRate,
-          isPriceClean,
           payAccruedOnDefault,
-          notional,
           PACKAGE = "CDS")
 
 }

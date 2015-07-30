@@ -12,7 +12,7 @@
 #' getDates(as.Date("2014-05-07"), maturity = "5Y")
 #' 
 
-getDates <- function(TDate, maturity = "5Y"){
+getDates <- function(TDate, maturity = "5Y", startDate = NULL){
 
     ## check maturity. Has to be "6M" of "NY" where N is an integer
     duration <- gsub("[[:digit:]]", "", maturity)
@@ -31,7 +31,7 @@ getDates <- function(TDate, maturity = "5Y"){
     for (i in 1:2){valueDate <- .adjNextBusDay(valueDate + 1)}
     
     ## startDate accrual date
-    startDate <- .getFirstAccrualDate(TDate)
+    coalesce(startDate) <- .getFirstAccrualDate(TDate)
 
     ## firstcouponDate the next IMM date approx after
     ## startDate. adjust to bus day

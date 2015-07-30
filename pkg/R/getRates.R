@@ -1,3 +1,7 @@
+getTenorMonths <- function() {
+  # TODO:
+}
+
 #' The function returns the deposits and swap rates for the day
 #' input. The day input should be a weekday. If not, go to the most
 #' recent weekday.
@@ -18,8 +22,6 @@
 #'
 #' getRates(as.Date("2014-05-07"), currency = "USD")
 #' 
-
-
 getRates <- function(date = Sys.Date(), currency = "USD"){
 
     ## coerce into character and change to upper case
