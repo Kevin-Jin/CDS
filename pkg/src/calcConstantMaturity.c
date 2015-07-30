@@ -2,6 +2,7 @@
 #define USE_RINTERNALS
 #include <Rdefines.h>
 #include <Rinternals.h>
+#include "utilities.h"
 #include "version.h"
 #include "macros.h"
 #include "convert.h"
@@ -19,7 +20,7 @@
 
 #define NEW_ARRAY1(t,n)          (t *) JpmcdsMallocSafe(sizeof(t)*(n))
 //override JP Morgan's ISDA CDS standard model cerror.c with R's error handling
-#define JpmcdsErrMsg(...) error(__VA_ARGS__)
+#define JpmcdsErrMsg(...) warning(__VA_ARGS__)
 
 // can we use getNextBusDate() ??
 int adjNextBusDay(TMonthDayYear* today, TDate* temp) {
@@ -76,40 +77,6 @@ int getContractEndDate(long year, long month, long day, int maturityMonths, TDat
   return SUCCESS;
 }
 
-int daysToNextImmDate(TMonthDayYear from) {
-  TDate temp;
-  long dayOfWeek;
-
-  if (JpmcdsNormalizeMDY(&from) != SUCCESS)
-    return FAILURE;
-
-  to = from;
-  to.month += 3 - to.month % 3; // == 3 * (1 + to.month / 3)
-  // previous statement pushes Mar, Jun, Sep, Dec forward 3 months.
-  // that is correct only if to.day is on or after the IMM 20th of the month.
-  if (from.month % 3 == 0 && to.day < 20) {
-	to.month -= 3;
-  }
-  to.day = 20;
-
-  if (JpmcdsNormalizeMDY(&to) != SUCCESS)
-    return FAILURE;
-  if (JpmcdsMDYToDate(&to, &temp) != SUCCESS)
-    return FAILURE;
-  if (JpmcdsDayOfWeek(temp, &dayOfWeek) != SUCCESS)
-    return FAILURE;
-
-  // Sunday or Saturday
-  if (dayOfWeek == 0) {
-    to.day += 1;
-  } else if (dayOfWeek == 6) {
-    to.day += 2;
-  }
-
-  JpmcdsErrMsg("daysToNextImmDate NOT YET IMPLEMENTED");
-  return FAILURE;
-}
-
 /*
 ***************************************************************************
 ** Interpolate constant maturity spread.
@@ -159,13 +126,13 @@ SEXP calcConstantMaturity
   int resultLen, numInstruments, i, j, k, gc_protected, baseDateLen,
     typesLen, ratesLen, expiriesLen, mmDCCLen,
     fixedSwapFreqLen, floatSwapFreqLen, fixedSwapDCCLen, floatSwapDCCLen, badDayConvZCLen, holidaysLen,
-    todayDateLen, valueDateLen, startDateLen, endDateLen, stepinDateLen,
+    valueDateLen, startDateLen, endDateLen, stepinDateLen,
     dccCDSLen, ivlCDSLen, stubCDSLen, badDayConvCDSLen, calendarLen,
     parSpreadLen, recoveryRateLen, payAccruedOnDefaultLen;
   TDate baseDate, today, startDate, endDate, stepinDate,valueDate;
   //TMonthDayYear tempMDY;
   int payAccruedOnDefault;
-  SEXP upfrontPayment, is_na_at;
+  SEXP syntheticSpread, is_na_at;
   TCurve **discCurve;
   char* pt_types;
   char* pt_holidays;
@@ -182,7 +149,7 @@ SEXP calcConstantMaturity
 
   // new
   char *pt_badDayConvZC;
-  double *parSpread_for_upf, recoveryRate_for_upf, *upfrontPayments, *result;
+  double *parSpread_for_upf, recoveryRate_for_upf, *syntheticSpreads, *result;
 
   static char *routine = "CalcUpfrontCharge";
   TDateInterval ivl;
@@ -239,14 +206,13 @@ SEXP calcConstantMaturity
   gc_protected = 0;
   rownames = VECTOR_ELT(getAttrib(parSpread, R_DimNamesSymbol), 0);
   colnames = VECTOR_ELT(getAttrib(parSpread, R_DimNamesSymbol), 1);
-  nrow = *INTEGER(getAttrib(R_DimSymbol, R_DimNamesSymbol))[0];
+  nrow = INTEGER(getAttrib(parSpread, R_DimSymbol))[0];
   monthsMaturity = NEW_ARRAY1(int, nrow);
   spreadCurveDates = NEW_ARRAY1(TDate, nrow);
-  resultLen = *INTEGER(getAttrib(R_DimSymbol, R_DimNamesSymbol))[1];
+  resultLen = INTEGER(getAttrib(parSpread, R_DimSymbol))[1];
   result = NEW_ARRAY1(double, resultLen);
   for (i = 0; i < resultLen; ++i)
     result[i] = NA_REAL;
-JpmcdsErrMsg ("nrow = %d, ncol = %d, rownames[0] = %s, colnames[0] = %s\n", nrow, *INTEGER(getAttrib(R_DimSymbol, R_DimNamesSymbol))[0], CHAR(STRING_ELT(rownames, 0)), CHAR(STRING_ELT(colnames, 0)));
 
   baseDate_input = PROTECT(coerceVector(baseDate_input,INTSXP));
   gc_protected++;
@@ -302,7 +268,7 @@ JpmcdsErrMsg ("nrow = %d, ncol = %d, rownames[0] = %s, colnames[0] = %s\n", nrow
     // vector is entirely NA
     goto done;
   for (j = 0; j < nrow; j++)
-    if (sscanf(STRING_ELT(colnames, j), "%d", &monthsMaturity[j]) != 1)
+    if (sscanf(CHAR(STRING_ELT(rownames, j)), "%d", &monthsMaturity[j]) != 1)
       goto done;
   
   k = 0;
@@ -438,40 +404,26 @@ JpmcdsErrMsg ("nrow = %d, ncol = %d, rownames[0] = %s, colnames[0] = %s\n", nrow
       pt_badDayConvCDS = (char *) CHAR(STRING_ELT(badDayConvCDS, i % badDayConvCDSLen));
 
       // can we use JpmcdsStringToDate() ??
-      if (sscanf((char *) CHAR(STRING_ELT(rownames, i)), "%04ld-%02ld-%02ld", &year, &month, &day) < 3)
+      if (sscanf((char *) CHAR(STRING_ELT(colnames, i)), "%04ld-%02ld-%02ld", &year, &month, &day) < 3)
         goto done;
 
       numMaturities = nrow;
       today = JpmcdsDate(year, month, day);
 	  if (today == FAILURE)
         goto done;
-      for (j = 0; j < numMaturities; j++) {
+      for (j = numMaturities - 1; j >= 0; --j) {
         // exclude maturities with NA
         // FIXME: this mutates parSpread in the code surrounding the call in R
 		if (LOGICAL(is_na_at)[nrow * i + j]) {
-          for (k = nrow * i + j; k < numMaturities; k++)
+          for (k = nrow * i + j; k < nrow * i + numMaturities - 1; k++)
             parSpread_for_upf[k] = parSpread_for_upf[k + 1];
           numMaturities--;
         }
 
-        // add monthsMaturity to today's date and snap to following IMM date to get
-	    // maturity dates on our curve (if today is IMM date, then add 3 months)
-        /*tempMDY.year = year;
-        tempMDY.month = month + monthsMaturity[j];
-		tempMDY.day = day;
-        k = daysToNextImmDate(tempMDY);
-        if (k == FAILURE) // k should never be negative
-          goto done;
-        tempMDY.day += k;
-        if (JpmcdsNormalizeMDY(&tempMDY) != SUCCESS)
-          goto done;
-        if (JpmcdsMDYToDate(&tempMDY, &spreadCurveDates[j]) != SUCCESS)
-          goto done;*/
-
-        if (getContractEndDate(year, month, day, &spreadCurveDates[j]) != SUCCESS)
+        if (getContractEndDate(year, month, day, monthsMaturity[j], &spreadCurveDates[j]) != SUCCESS)
           goto done;
       }
-      TCurve *curve = JpmcdsCleanSpreadCurve(
+      /*TCurve *curve = JpmcdsCleanSpreadCurve(
           today,
           discCurve[i % baseDateLen],
           startDate,
@@ -489,23 +441,45 @@ JpmcdsErrMsg ("nrow = %d, ncol = %d, rownames[0] = %s, colnames[0] = %s\n", nrow
           &stub,
           (char) *pt_badDayConvCDS,
           pt_calendar
+      );*/
+      TCurve *curve = JpmcdsMakeTCurve(
+          today,
+          spreadCurveDates,
+		  // R matrices are column-major, so below grabs contiguous column for the date
+          &parSpread_for_upf[nrow * i],
+          numMaturities,
+          JPMCDS_CONTINUOUS_BASIS,
+          dcc
       );
-      if (curve == NULL || JpmcdsInterpRate(endDate, curve, JPMCDS_LINEAR_INTERP, &result[i]) != SUCCESS)
+      /*JpmcdsErrMsg("%d %d %d %d %d %d\n%s %s %s %s %s %s\n%f %f %f %f %f %f",
+          monthsMaturity[0], monthsMaturity[1], monthsMaturity[2], monthsMaturity[3], monthsMaturity[4], monthsMaturity[5],
+          JpmcdsFormatDate(spreadCurveDates[0]), JpmcdsFormatDate(spreadCurveDates[1]), JpmcdsFormatDate(spreadCurveDates[2]), JpmcdsFormatDate(spreadCurveDates[3]), JpmcdsFormatDate(spreadCurveDates[4]), JpmcdsFormatDate(spreadCurveDates[5]),
+          parSpread_for_upf[nrow * i + 0], parSpread_for_upf[nrow * i + 1], parSpread_for_upf[nrow * i + 2], parSpread_for_upf[nrow * i + 3], parSpread_for_upf[nrow * i + 4], parSpread_for_upf[nrow * i + 5]
+      );
+      JpmcdsErrMsg("%d %s %s %s", numMaturities, JpmcdsFormatDate(today), JpmcdsFormatDate(startDate), JpmcdsFormatDate(endDate));*/
+      if (curve == NULL)
         goto done;
+      if (JpmcdsInterpRate(endDate, curve, JPMCDS_LINEAR_INTERP, &result[i]) != SUCCESS) {
+        JpmcdsFreeTCurve(curve);
+        goto done;
+      }
+      JpmcdsFreeTCurve(curve);
   }
 
  done:
-    PROTECT(upfrontPayment = allocVector(REALSXP, resultLen));
+    PROTECT(syntheticSpread = allocVector(REALSXP, resultLen));
     gc_protected++;
-    upfrontPayments = REAL(upfrontPayment);
+    syntheticSpreads = REAL(syntheticSpread);
     for (i = 0; i < resultLen; ++i)
-      upfrontPayments[i] = result[i];
+      syntheticSpreads[i] = result[i] * 1e4;
     UNPROTECT(gc_protected);
     FREE(spreadCurveDates);
     FREE(monthsMaturity);
+    for (i = 0; i < baseDateLen; i++)
+      JpmcdsFreeTCurve(discCurve[i]);
     FREE(discCurve);
     FREE(result);
-    return upfrontPayment;
+    return syntheticSpread;
 }
 
 

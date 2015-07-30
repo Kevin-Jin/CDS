@@ -10,7 +10,7 @@
 #'
 #' @param parSpread term structure of CDS par spread in bps. Each
 #' row name must be a rolling maturity counted in months. Use
-#' rownames(parSpreads) <- getTenorMonths(rownames(parSpreads)) to
+#' rownames(parSpreads) <- tenorToMonths(rownames(parSpreads)) to
 #' assist you in converting Y and M strings. Each column name must be
 #' when the trade is executed, AKA TDate, in the form YYYY-MM-DD. Use
 #' colnames(parSpreads) <- format(as.Date(colnames(parSpreads)), %Y-%m-%d)
@@ -76,6 +76,7 @@
 
 rollingToConstantMaturity <- function(parSpread,
         baseDate = NULL,
+        currency = "USD",
 
         zeroCurve = NULL,
 
@@ -102,13 +103,17 @@ rollingToConstantMaturity <- function(parSpread,
         badDayConvCDS = "F",
         calendar = "None",
         
-        coupon = 100,
         recoveryRate = 0.4,
         payAccruedOnDefault = TRUE){
 
-    TDate = colnames(parSpread)
+    rownames(parSpread) <- tenorToMonths(rownames(parSpread))
+    TDate = tryCatch({ as.Date(colnames(parSpread)) }, error = function(e) { NA })
+    stopifnot(all(!is.na(rownames(parSpread))))
+    stopifnot(all(!is.na(TDate)))
+	coalesce(baseDate) <- TDate
+
     ratesDate <- baseDate
-    cdsDates <- getDates(TDate = as.Date(TDate), maturity = maturity, startDate = startDate)
+    cdsDates <- getDates(TDate = TDate, maturity = maturity, startDate = startDate)
 
     baseDate <- .separateYMD(baseDate)
     today <- .separateYMD(TDate)
@@ -175,10 +180,7 @@ rollingToConstantMaturity <- function(parSpread,
     }
     # vector length checks for parallel arrays
     correctLengths <- function() all.equal(length(rates), length(expiries), if (length(types) > 0) sum(nchar(types[!is.na(types)])) else 0)
-    numericRowNames <- function() suppressWarnings(!is.na(as.numeric(rownames(parSpread))))
-    numericColNames <- function() suppressWarnings(!is.na(as.numeric(colnames(parSpread))))
     stopifnot(correctLengths())
-    stopifnot(all(numericRowNames(), numericColNames()))
     # we'll just recycle mmDCC, fixedSwapFreq, floatSwapFreq, fixedSwapDCC, floatSwapDCC, badDayConvZC, holidays
     # in the C code if they're not all equal in length to length(ratesDate), but it's usually an error if
     # their lengths are greater than length(ratesDate) or not some factor of length(ratesDate) because some values will
@@ -224,7 +226,6 @@ rollingToConstantMaturity <- function(parSpread,
           calendar,
           
           parSpread,
-          coupon,
           recoveryRate,
           payAccruedOnDefault,
           PACKAGE = "CDS")
