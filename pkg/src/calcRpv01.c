@@ -22,14 +22,8 @@
 //override JP Morgan's ISDA CDS standard model cerror.c with R's error handling
 #define JpmcdsErrMsg(...) warning(__VA_ARGS__)
 
-/*
-***************************************************************************
-** Calculate upfront charge.
-***************************************************************************
-*/
-
 //EXPORT int JpmcdsCdsoneUpfrontCharge(cdsone.c)
-SEXP calcUpfrontTest
+SEXP calcRpv01
 (SEXP baseDate_input,  /* (I) Value date  for zero curve       */
  SEXP types, /* "MMMMMSSSSSSSSS"*/
  SEXP rates, /* rates[14] = {1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
@@ -82,6 +76,7 @@ SEXP calcUpfrontTest
   int isPriceClean, payAccruedOnDefault;
   SEXP upfrontPayment, is_na_at;
   TCurve **discCurve;
+  TCurve *flatSpreadCurve = NULL;
   char* pt_types;
   char* pt_holidays;
   char* pt_mmDCC;
@@ -97,7 +92,7 @@ SEXP calcUpfrontTest
 
   // new
   char *pt_badDayConvZC;
-  double *parSpread_for_upf, couponRate_for_upf, recoveryRate_for_upf, *upfrontPayments, *result;
+  double oneSpread, *parSpread_for_upf, couponRate_for_upf, recoveryRate_for_upf, *upfrontPayments, *result;
 
   static char *routine = "CalcUpfrontCharge";
   TDateInterval ivl;
@@ -357,25 +352,49 @@ SEXP calcUpfrontTest
       payAccruedOnDefault = INTEGER(payAccruedOnDefault_input)[i % payAccruedOnDefaultLen];
       pt_badDayConvCDS = (char *) CHAR(STRING_ELT(badDayConvCDS, i % badDayConvCDSLen));
 
-      if (JpmcdsCdsoneUpfrontCharge(today,
+      oneSpread = parSpread_for_upf[i % parSpreadLen]/10000.0;
+      flatSpreadCurve = JpmcdsCleanSpreadCurve (
+          today,
+          discCurve[i % baseDateLen],
+          benchmarkDate,
+          stepinDate,
+          valueDate,
+          1,
+          &endDate,
+          &oneSpread,
+          NULL,
+          recoveryRate_for_upf,
+          payAccruedOnDefault,
+          &ivl,
+          dcc,
+          &stub,
+          (char) *pt_badDayConvCDS,
+          pt_calendar);
+      if (flatSpreadCurve == NULL)
+        goto done;
+
+      if (JpmcdsCdsFeeLegPV(today,
 				  valueDate,
-				  benchmarkDate,
 				  stepinDate,
 				  startDate,
 				  endDate,
-				  couponRate_for_upf / 10000.0,
 				  payAccruedOnDefault, //TRUE,
 				  &ivl,
 				  &stub, 
+				  REAL(notional)[i % notionalLen],
+				  couponRate_for_upf / 10000.0,
 				  dcc,
 				  (char) *pt_badDayConvCDS,
 				  pt_calendar,
 				  discCurve[i % baseDateLen],
-				  parSpread_for_upf[i % parSpreadLen]/10000.0, 
-				  recoveryRate_for_upf,
+				  flatSpreadCurve,
+				  TRUE, // "credit risk begins at the end of the trade date" implies FALSE? TRUE is for consistency with implied RPV01 in a call to upfront()
 				  isPriceClean,
-				  &result[i]) != SUCCESS) 
+				  &result[i]) != SUCCESS) {
+        JpmcdsFreeTCurve(flatSpreadCurve);
         goto done;
+      }
+      JpmcdsFreeTCurve(flatSpreadCurve);
   }
 
  done:
@@ -383,7 +402,7 @@ SEXP calcUpfrontTest
     gc_protected++;
     upfrontPayments = REAL(upfrontPayment);
     for (i = 0; i < resultLen; ++i)
-      upfrontPayments[i] = result[i] * REAL(notional)[i % notionalLen];
+      upfrontPayments[i] = result[i] * 100;
     UNPROTECT(gc_protected);
     for (i = 0; i < baseDateLen; i++)
       JpmcdsFreeTCurve(discCurve[i]);

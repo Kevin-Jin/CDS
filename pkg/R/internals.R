@@ -120,7 +120,7 @@ CDSdf <- function(object){
         date$mon - (as.numeric(format(date, "%m")) %% 3
     ))
     date$mday <- 20
-    accrualDate <- .adjNextBusDay(as.Date(as.POSIXct(date)))
+    accrualDate <- as.Date(as.POSIXct(date))
 
     return(accrualDate)
 }

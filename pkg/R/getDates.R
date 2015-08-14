@@ -1,4 +1,28 @@
-#' The function gets relevant coupon dates for a CDS contract.
+tenorToMonths <- function(tenor.str) {
+  # already in the right format
+  if (all(!is.na(suppressWarnings(as.numeric(tenor.str)))))
+    return(tenor.str)
+  
+  apply(stringr::str_match(tenor.str, "^(\\d+)([MY])$")[, -1, drop = FALSE], 1, function(tenor) {
+    if (!any(is.na(tenor))) {
+      factor <- if (tenor[2] == "Y") 12 else 1
+      as.numeric(tenor[1]) * factor
+    } else {
+      NA
+    }
+  })
+}
+
+getStartDate <- function(maturity, endDate) {
+    if (is.null(maturity) || is.null(endDate))
+        return(NULL)
+
+    startDate <- as.POSIXlt(endDate)
+    startDate$mon <- startDate$mon - tenorToMonths(maturity) - 3
+    startDate <- as.Date(startDate)
+}
+
+#' The function gets SNAC (IMM) coupon dates for a CDS contract.
 #' 
 #' @param TDate the trade date
 #' @param maturity maturity of the CDS contract. Default "5Y".
@@ -12,7 +36,7 @@
 #' getDates(as.Date("2014-05-07"), maturity = "5Y")
 #' 
 
-getDates <- function(TDate, maturity = "5Y", startDate = NULL){
+getDates <- function(TDate, maturity = "5Y", startDate = NULL, endDate = NULL){
 
     ## check maturity. Has to be "6M" of "NY" where N is an integer
     duration <- gsub("[[:digit:]]", "", maturity)
@@ -27,18 +51,17 @@ getDates <- function(TDate, maturity = "5Y", startDate = NULL){
     stepinDate <- .adjNextBusDay(TDate + 1)
 
     ## valueDate T + 3 bus day
-    valueDate <- stepinDate
-    for (i in 1:2){valueDate <- .adjNextBusDay(valueDate + 1)}
+    valueDate <- .adjNextBusDay(.adjNextBusDay(stepinDate + 1) + 1)
     
     ## startDate accrual date
-    coalesce(startDate) <- .getFirstAccrualDate(TDate)
+    coalesce(startDate) <- getStartDate(maturity, endDate) %??% .getFirstAccrualDate(TDate)
 
     ## firstcouponDate the next IMM date approx after
-    ## startDate. adjust to bus day
+    ## startDate
     firstcouponDate <- as.POSIXlt(startDate)
     firstcouponDate$mon <- firstcouponDate$mon + 3
-    firstcouponDate <- as.Date(.adjNextBusDay(firstcouponDate))
-    
+    firstcouponDate <- as.Date(firstcouponDate)
+
     ## endDate firstcouponDate + maturity. IMM dates. No adjustment.
     endDate <- as.POSIXlt(firstcouponDate)
     if (duration == "M"){
@@ -48,13 +71,19 @@ getDates <- function(TDate, maturity = "5Y", startDate = NULL){
     }
     endDate <- as.Date(endDate)
     
-    ## pencouponDate T + maturity - 1 accrual interval. adj to bus day
+    ## pencouponDate T + maturity - 1 accrual interval
     pencouponDate <- as.POSIXlt(endDate)
     pencouponDate$mon <- pencouponDate$mon - 3
-    pencouponDate <- as.Date(.adjNextBusDay(pencouponDate))
+    pencouponDate <- as.Date(pencouponDate)
     
     ## backstopDate T - 60
     backstopDate <- TDate - 60
+    
+    ## adjust dates to business day after first using them
+	## to calculate the other dates
+    startDate <- .adjNextBusDay(startDate)
+    firstcouponDate <- .adjNextBusDay(firstcouponDate)
+    pencouponDate <- .adjNextBusDay(pencouponDate)
 
     return(data.frame(TDate, stepinDate, valueDate, startDate,
                       firstcouponDate, pencouponDate, endDate, 

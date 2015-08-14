@@ -1,90 +1,9 @@
-#' Calculate dirty upfront payments from conventional spread
+#' Calculates the expected present value of 1bp paid on the premium leg until default or maturity, AKA risky duration.
 #'
-#' Note that if you're performing a vectorized operation on a table
-#' with a date per row and a column per CDS contract, it's better to
-#' pass in a scalar baseDate and a vector of parSpreads, e.g. if
-#' the date is in the first column of table, then the first of these
-#' two equivalent operations is much faster:
-#' apply(t, 1, function(r) upfront(TDate = r[1], parSpread = r[-1]))
-#' apply(t, 2, function(c) upfront(TDate = t[, 1], parSpread = c))
-#' This is due to the expensive initialization that must be done to
-#' create the interest rate curve each day.
-#'
-#' @param TDate is when the trade is executed, denoted as T. 
-#' @param baseDate is the start date for the IR curve. Default is TDate.
-#' aka curve date.
-#' @param currency in which CDS is denominated. 
-#' @param zeroCurve is a data frame that represents discount IR curve.
-#' SNAC convention is the USD ISDA standard LIBOR swap curve retrieved
-#' by the function serializeRatesCsv(). Default NULL, i.e. download
-#' interest rates for all tenors on baseDate from Markit on demand.
-#' @param types is a string indicating the names of the instruments
-#' used for the yield curve. 'M' means money market rate; 'S' is swap
-#' rate.
-#' @param rates is an array of numeric values indicating the rate of
-#' each instrument.
-#' @param expiries is an array of characters indicating the maturity
-#' of each instrument.
-#' @param mmDCC is the day count convention of the instruments.
-#' @param fixedSwapFreq is the frequency of the fixed rate of swap
-#' being paid.
-#' @param floatSwapFreq is the frequency of the floating rate of swap
-#' being paid.
-#' @param fixedSwapDCC is the day count convention of the fixed leg.
-#' @param floatSwapDCC is the day count convention of the floating leg.
-#' @param badDayConvZC is a character indicating how non-business days
-#' are converted.
-#' @param holidays is an input for holiday files to adjust to business
-#' days.
-#' @param valueDate is the date for which the present value of the CDS
-#' is calculated. aka cash-settle date. The default is T + 3.
-#' @param benchmarkDate Accrual begin date.
-#' @param startDate is when the CDS nominally starts in terms of
-#' premium payments, i.e. the number of days in the first period (and
-#' thus the amount of the first premium payment) is counted from this
-#' date. aka accrual begin date.
-#' @param endDate aka maturity date. This is when the contract expires
-#' and protection ends. Any default after this date does not trigger a
-#' payment.
-#' @param stepinDate default is T + 1. aka effective date.
-#' @param maturity of the CDS contract.
-#' @param dccCDS day count convention of the CDS. Default is ACT/360.
-#' @param freqCDS date interval of the CDS contract.
-#' @param stubCDS is a character indicating the presence of a stub.
-#' @param badDayConvCDS refers to the bay day conversion for the CDS
-#' coupon payments. Default is "F", following.
-#' @param calendar refers to any calendar adjustment for the CDS.
-#' @param parSpread CDS par spread in bps. aka trade level.
-#' @param coupon quoted in bps. It specifies the payment amount from
-#' the protection buyer to the seller on a regular basis. The default
-#' is 100 bps. SNAC convention is 100 bps for investment grade and
-#' 500 bps for high yield names. aka running coupon, fixed coupon.
-#' @param recoveryRate in decimal. Default is 0.4. ISDA convention is
-#' 0.4 for senior unsecured (SNRFOR) and 0.2 for subordinate (SUBLT2).
-#' @param isPriceClean refers to the type of upfront calculated. It is
-#' boolean. When \code{TRUE}, calculate principal only. When
-#' \code{FALSE}, calculate principal + accrual. Default is FALSE.
-#' Convention is TRUE for quotes on Bloomberg, Reuters, FactSet, and
-#' in US bond markets, and FALSE for European bond markets and in
-#' the actual settlement.
-#' @param payAccruedOnDefault is a partial payment of the premium made
-#' to the protection seller in the event of a default. Default is
-#' \code{TRUE}.
-#' @param notional is the amount of the underlying asset on which the
-#' payments are based. Default is 1e7, i.e. 10MM.
-#' @return a numeric indicating the amount of upfront payments from a
-#' protection buyer's perspective.
-#' @export
-#' 
-#' @examples
-#' upf <- upfront(baseDate = "2014-01-13", currency = "USD", TDate
-#' = "2014-01-14", maturity = "5Y", dccCDS = "ACT/360", freqCDS = "Q",
-#' stubCDS = "F", badDayConvCDS = "F", calendar = "None", parSpread =
-#' 32, coupon = 100, recoveryRate = 0.4, isPriceClean = FALSE,
-#' notional = 1e7)
-#' 
-
-upfront <- function(TDate,
+#' For all parSpread != coupon and isPriceClean == TRUE, we expect that the two following conditions are true:
+#' RPV01(TDate, parSpread) exactly equals (upfront(TDate, parSpread, coupon, notional) / (parSpread - coupon) / notional * 1e4) up to a machine precision
+#' RPV01(TDate, parSpread)  approximates  ((price(upfront(TDate, parSpread + 1, coupon, notional), notional) / price(upfront(TDate, parSpread, coupon, notional), notional) - 1) * -1e4)
+RPV01 <- function(TDate,
                     baseDate = TDate,
                     currency = "USD",
 
@@ -115,11 +34,13 @@ upfront <- function(TDate,
                     calendar = "None",
                     
                     parSpread,
-                    coupon = 100,
                     recoveryRate = 0.4,
                     isPriceClean = FALSE,
-                    payAccruedOnDefault = TRUE,
-                    notional = 1e7){
+                    payAccruedOnDefault = TRUE){
+    # RPV01 doesn't depend on coupon, and premium leg PV function seems to dislike coupons other than 100
+    coupon <- 100
+    # saves us from having to divide premium leg PV by notional
+    notional <- 1
 
     ratesDate <- baseDate
     cdsDates <- getDates(as.Date(TDate), maturity, startDate, endDate)
@@ -209,7 +130,7 @@ upfront <- function(TDate,
     warnSuspectLengths(badDayConvZC, "bad day conventions")
     warnSuspectLengths(holidays, "holidays")
     
-    .Call('calcUpfrontTest',
+    .Call('calcRpv01',
           baseDate,
           types,
           rates,

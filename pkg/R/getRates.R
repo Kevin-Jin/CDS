@@ -1,18 +1,3 @@
-tenorToMonths <- function(tenor.str) {
-  # already in the right format
-  if (all(!is.na(suppressWarnings(as.numeric(tenor.str)))))
-    return(tenor.str)
-  
-  apply(stringr::str_match(tenor.str, "^(\\d+)([MY])$")[, -1, drop = FALSE], 1, function(tenor) {
-    if (!any(is.na(tenor))) {
-      factor <- if (tenor[2] == "Y") 12 else 1
-      as.numeric(tenor[1]) * factor
-    } else {
-      NA
-    }
-  })
-}
-
 #' The function returns the deposits and swap rates for the day
 #' input. The day input should be a weekday. If not, go to the most
 #' recent weekday.
